@@ -1,0 +1,47 @@
+- name: Download setuptools
+  environment:
+    https_proxy: PROXY
+  get_url:
+    url: https://pypi.python.org/packages/source/s/setuptools/setuptools-7.0.tar.gz
+    dest: /home/ubuntu
+    validate_certs: no
+  become: yes
+  become_user: ubuntu
+
+- name: Unarchive setup tools
+  unarchive:
+    src: /home/ubuntu/setuptools-7.0.tar.gz
+    dest: /home/ubuntu/
+    remote_src: yes
+  become: yes
+  become_user: ubuntu
+ 
+- name: Run python command to install setup tools
+  command: python /home/ubuntu/setuptools-7.0/setup.py install
+
+- name: Download pip installer
+  environment:
+    https_proxy: PROXY
+  get_url:
+    url: https://bootstrap.pypa.io/get-pip.py
+    dest: /home/ubuntu
+    validate_certs: no
+  become: yes
+  become_user: ubuntu
+
+- name: Run python command to install pip
+  environment:
+    https_proxy: PROXY
+  command: python /home/USER/get-pip.py --user --proxy $https_proxy 
+  become: yes
+  become_user: ubuntu
+
+- name: install Docker SDK for Python
+  become: yes
+  become_user: ubuntu
+  pip:
+    name: docker
+    extra_args: --user --proxy=PROXY
+    executable: /home/ubuntu/.local/bin/pip
+
+

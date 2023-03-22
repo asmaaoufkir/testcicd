@@ -1,0 +1,488 @@
+heat_template_version: 2018-08-31
+
+description: msgsv4docacloud docacloud stack
+
+parameters:
+# Environnement
+  msgsv4docacloud_name_prefix:
+    type: string
+    description: Prefixe pour tous les noms (designant generalement un environnement)
+
+  msgsv4docacloud_public_key:
+    type: string
+    description: clef SSH publique
+
+# Reseau externe
+  docacloud_public_network:
+    type: string
+    description: Nom du reseau public
+    default: ext-net
+
+  nb_vm_cassandra:
+    type: number
+    default: 1
+
+  nb_vm_elasticsearch:
+    type: number
+    default: 1
+
+  nb_vm_james:
+    type: number
+    default: 1
+
+  nb_vm_injecteur:
+    type: number
+    default: 0
+resources:
+
+  volume_boot_bastion:
+    type: OS::Cinder::Volume
+    properties:
+      image: CentOS-7-msgsv
+      size: 20
+  volume_boot_service:
+    type: OS::Cinder::Volume
+    properties:
+      image: CentOS-7-msgsv
+      size: 20
+
+# Groupes de securite
+# Autorise les acces entrant depuis Internet sur les ports http et depuis le VPN sur le port SSH
+  msgsv4docacloud_server_security_group:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      description: Groupe de securite pour le projet msgsv4docacloud
+      name:
+       str_replace:
+         template: $msgsv4docacloud_name_prefix-security-group
+         params:
+           $msgsv4docacloud_name_prefix : { get_param: msgsv4docacloud_name_prefix }
+      rules:
+        # connexion SSH depuis l'exterieur
+        - remote_ip_prefix: "0.0.0.0/0"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 22
+          port_range_max: 22
+
+        # connexions HTTP et HTTPS externes
+        - remote_ip_prefix: "0.0.0.0/0"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 80
+          port_range_max: 80
+        - remote_ip_prefix: "0.0.0.0/0"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 443
+          port_range_max: 443
+
+        # admin ws
+        - remote_ip_prefix: "192.168.1.0/24"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 8080
+          port_range_max: 8080
+
+        # ldap
+        - remote_ip_prefix: "192.168.1.0/24"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 389
+          port_range_max: 389
+
+        # cassandra
+        - remote_ip_prefix: "192.168.1.0/24"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 7000
+          port_range_max: 7000
+        - remote_ip_prefix: "192.168.1.0/24"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 9042
+          port_range_max: 9042
+
+        # elasticsearch
+        - remote_ip_prefix: "192.168.1.0/24"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 9200
+          port_range_max: 9200
+        - remote_ip_prefix: "192.168.1.0/24"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 9300
+          port_range_max: 9300
+
+        # kibana
+        - remote_ip_prefix: "192.168.1.0/24"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 5601
+          port_range_max: 5601
+
+        # imap interne load balancing
+        - remote_ip_prefix: "192.168.1.0/24"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 143
+          port_range_max: 143
+
+        # imap interne
+        - remote_ip_prefix: "192.168.1.0/24"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 40143
+          port_range_max: 40143
+        
+        # imaps
+        - remote_ip_prefix: "192.168.1.0/24"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 40993
+          port_range_max: 40993
+
+        # pop interne load balancing
+        - remote_ip_prefix: "192.168.1.0/24"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 110
+          port_range_max: 110
+
+        # pop interne
+        - remote_ip_prefix: "192.168.1.0/24"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 40110
+          port_range_max: 40110
+
+        # smtp interne
+        - remote_ip_prefix: "192.168.1.0/24"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 40025
+          port_range_max: 40025
+
+        # lmtp interne
+        - remote_ip_prefix: "192.168.1.0/24"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 40024
+          port_range_max: 40024
+
+         # smtp interne load balancing
+        - remote_ip_prefix: "192.168.1.0/24"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 25
+          port_range_max: 25
+
+        # smtp ssl
+        - remote_ip_prefix: "192.168.1.0/24"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 40465
+          port_range_max: 40465
+
+        # smtp tls
+        - remote_ip_prefix: "192.168.1.0/24"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 40587
+          port_range_max: 40587
+        
+          # Webamin James
+        - remote_ip_prefix: "192.168.1.0/24"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 40800
+          port_range_max: 40800
+          
+          # filebeat --> logstash
+        - remote_ip_prefix: "192.168.1.0/24"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 5044
+          port_range_max: 5044
+
+         # mailhog
+        - remote_ip_prefix: "192.168.1.0/24"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 8025
+          port_range_max: 8025
+          
+# Reseau
+  msgsv4docacloud_network:
+    type: OS::Neutron::Net
+    properties:
+      value_specs: { mtu: 1450 }
+      name:
+        str_replace:
+          template: $msgsv4docacloud_name_prefix-network
+          params:
+            $msgsv4docacloud_name_prefix : { get_param: msgsv4docacloud_name_prefix }
+  msgsv4docacloud_subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      name:
+       str_replace:
+         template: $msgsv4docacloud_name_prefix-subnet
+         params:
+           $msgsv4docacloud_name_prefix : { get_param: msgsv4docacloud_name_prefix }
+      network_id: { get_resource: msgsv4docacloud_network }
+      cidr: "192.168.1.0/24"
+      allocation_pools: [{"start": "192.168.1.33", "end": "192.168.1.250"}]
+
+  msgsv4docacloud_router:
+    depends_on: msgsv4docacloud_subnet
+    type: OS::Neutron::Router
+    properties:
+      name:
+        str_replace:
+          template: $msgsv4docacloud_name_prefix-router
+          params:
+            $msgsv4docacloud_name_prefix : { get_param: msgsv4docacloud_name_prefix }
+      external_gateway_info:
+        network: { get_param: docacloud_public_network }
+
+  msgsv4docacloud_router_interface1:
+    depends_on: msgsv4docacloud_router
+    type: OS::Neutron::RouterInterface
+    properties:
+      router: { get_resource: msgsv4docacloud_router }
+      subnet: { get_resource: msgsv4docacloud_subnet }
+
+# Clef SSH maitresse
+
+  msgsv4docacloud-ssh-key:
+    type: OS::Nova::KeyPair
+    properties:
+      name:
+       str_replace:
+         template: $msgsv4docacloud_name_prefix-ssh-key
+         params:
+           $msgsv4docacloud_name_prefix : { get_param: msgsv4docacloud_name_prefix }
+      public_key: { get_param: msgsv4docacloud_public_key }
+
+  ############## start virtual machines #####################
+  
+  # --- bastion
+  msgsv4docacloud_bastion_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_resource: msgsv4docacloud_network }
+      security_groups: [ { get_resource: msgsv4docacloud_server_security_group} ]
+
+  msgsv4docacloud_bastion_vm:
+    depends_on: ["msgsv4docacloud-ssh-key", "msgsv4docacloud_server_security_group", "msgsv4docacloud_network", "msgsv4docacloud_bastion_port"]
+    type: OS::Nova::Server
+    properties:
+      name:
+       str_replace:
+         template: $msgsv4docacloud_name_prefix-bastion-vm
+         params:
+           $msgsv4docacloud_name_prefix : { get_param: msgsv4docacloud_name_prefix }
+      key_name: { get_resource: msgsv4docacloud-ssh-key }
+      image: CentOS-7-msgsv
+      flavor: doca.C1_R1_D20
+      networks:
+        - port: { get_resource: msgsv4docacloud_bastion_port }
+      block_device_mapping:
+        - device_name: vda
+          volume_id: { get_resource: volume_boot_bastion }
+          delete_on_termination: true
+
+  msgsv4docacloud_bastion_floating_ip:
+    depends_on: msgsv4docacloud_bastion_vm
+    type: OS::Neutron::FloatingIP
+    properties:
+      floating_network_id: { get_param: docacloud_public_network }
+      port_id: { get_resource: msgsv4docacloud_bastion_port }
+
+  # --- cluster cassandra
+  msgsv4docacloud_cassandra_group:
+    depends_on: ["msgsv4docacloud-ssh-key", "msgsv4docacloud_server_security_group", "msgsv4docacloud_network"]
+    type: OS::Heat::ResourceGroup
+    properties:
+      count: { get_param: nb_vm_cassandra }
+      resource_def:
+        type: server-with-volume.yaml
+        properties:
+          name:
+           str_replace:
+              template: $msgsv4docacloud_name_prefix-messagerie-cassandra-%index%-vm
+              params:
+                $msgsv4docacloud_name_prefix : { get_param: msgsv4docacloud_name_prefix }
+          image: CentOS-7-msgsv
+          flavor: doca.C4_R8_D120
+          key_name: { get_resource: msgsv4docacloud-ssh-key }
+          network_id: { get_resource: msgsv4docacloud_network }
+          security_group: { get_resource: msgsv4docacloud_server_security_group }
+          data_volume_size: 10
+
+  # --- cluster elastic
+  msgsv4docacloud_elasticsearch_group:
+    depends_on: ["msgsv4docacloud-ssh-key", "msgsv4docacloud_server_security_group", "msgsv4docacloud_network"]
+    type: OS::Heat::ResourceGroup
+    properties:
+      count: { get_param: nb_vm_elasticsearch }
+      resource_def:
+        type: server-with-volume.yaml
+        properties:
+          name:
+           str_replace:
+              template: $msgsv4docacloud_name_prefix-messagerie-elasticsearch-%index%-vm
+              params:
+                $msgsv4docacloud_name_prefix : { get_param: msgsv4docacloud_name_prefix }
+          image: CentOS-7-msgsv
+          flavor: doca.C4_R8_D120
+          key_name: { get_resource: msgsv4docacloud-ssh-key }
+          network_id: { get_resource: msgsv4docacloud_network }
+          security_group: { get_resource: msgsv4docacloud_server_security_group }
+          data_volume_size: 10
+
+  # --- cluster james
+  msgsv4docacloud_james_group:
+    depends_on: ["msgsv4docacloud-ssh-key", "msgsv4docacloud_server_security_group", "msgsv4docacloud_network"]
+    type: OS::Heat::ResourceGroup
+    properties:
+      count: { get_param: nb_vm_james }
+      resource_def:
+        type: server.yaml
+        properties:
+          name:
+           str_replace:
+              template: $msgsv4docacloud_name_prefix-messagerie-james-%index%-vm
+              params:
+                $msgsv4docacloud_name_prefix : { get_param: msgsv4docacloud_name_prefix }
+          image: CentOS-7-msgsv
+          flavor: doca.C2_R8_D60
+          key_name: { get_resource: msgsv4docacloud-ssh-key }
+          network_id: { get_resource: msgsv4docacloud_network }
+          security_group: { get_resource: msgsv4docacloud_server_security_group }
+
+  # --- cluster injecteur
+  msgsv4docacloud_injecteur_group:
+    depends_on: ["msgsv4docacloud-ssh-key", "msgsv4docacloud_server_security_group", "msgsv4docacloud_network"]
+    type: OS::Heat::ResourceGroup
+    properties:
+      count: { get_param: nb_vm_injecteur }
+      resource_def:
+        type: server.yaml
+        properties:
+          name:
+           str_replace:
+              template: $msgsv4docacloud_name_prefix-injecteur-%index%-vm
+              params:
+                $msgsv4docacloud_name_prefix : { get_param: msgsv4docacloud_name_prefix }
+          image: CentOS-7-msgsv
+          flavor: doca.C4_R16_D80
+          key_name: { get_resource: msgsv4docacloud-ssh-key }
+          network_id: { get_resource: msgsv4docacloud_network }
+          security_group: { get_resource: msgsv4docacloud_server_security_group }
+
+  # --- service
+  msgsv4docacloud_service_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_resource: msgsv4docacloud_network }
+      security_groups: [ { get_resource: msgsv4docacloud_server_security_group} ]
+
+  msgsv4docacloud_service_vm:
+    depends_on: ["msgsv4docacloud-ssh-key", "msgsv4docacloud_server_security_group", "msgsv4docacloud_network", "msgsv4docacloud_service_port"]
+    type: OS::Nova::Server
+    properties:
+      name:
+       str_replace:
+         template: $msgsv4docacloud_name_prefix-service-vm
+         params:
+           $msgsv4docacloud_name_prefix : { get_param: msgsv4docacloud_name_prefix }
+      key_name: { get_resource: msgsv4docacloud-ssh-key }
+      image: CentOS-7-msgsv
+      flavor: doca.C4_R8_D80
+      networks:
+        - port: { get_resource: msgsv4docacloud_service_port }
+      block_device_mapping:
+        - device_name: vda
+          volume_id: { get_resource: volume_boot_service }
+          delete_on_termination: true
+
+  
+  # --- rejeu
+  msgsv4docacloud_rejeu_vm:
+    depends_on: ["msgsv4docacloud-ssh-key", "msgsv4docacloud_server_security_group", "msgsv4docacloud_network"]
+    type: server-with-volume.yaml
+    properties:
+      name:
+       str_replace:
+         template: $msgsv4docacloud_name_prefix-rejeu-vm
+         params:
+           $msgsv4docacloud_name_prefix : { get_param: msgsv4docacloud_name_prefix }
+      key_name: { get_resource: msgsv4docacloud-ssh-key }
+      image: CentOS-7-msgsv
+      flavor: doca.C4_R16_D80
+      network_id: { get_resource: msgsv4docacloud_network }
+      security_group: { get_resource: msgsv4docacloud_server_security_group }
+      data_volume_size: 1
+
+  ############## end virtual machines #####################
+
+outputs:
+  inventory:
+    description: Ansible inventory
+    value:
+      str_replace:
+        template: |
+          [all_servers:vars]
+          ansible_ssh_private_key_file = {{inventory_dir}}/ssh_key
+          # ne pas enlever {{inventory_dir}}/known_hosts il est utilisé par deploy_applications
+          ansible_ssh_common_args = -F {{inventory_dir}}/ssh_config -o UserKnownHostsFile={{inventory_dir}}/known_hosts
+
+          [all_servers]
+          $msgsv4docacloud_name_prefix-bastion-vm floating_ip=$msgsv4docacloud_bastion_ip
+          $msgsv4docacloud_name_prefix-rejeu-vm
+          $msgsv4docacloud_name_prefix-service-vm
+        params:
+            $msgsv4docacloud_bastion_ip: { get_attr: [msgsv4docacloud_bastion_floating_ip, floating_ip_address] }
+            $msgsv4docacloud_name_prefix: { get_param: msgsv4docacloud_name_prefix }
+
+  ssh_config:
+    description: SSH configuration
+    value:
+      str_replace:
+        template: |
+            Host $msgsv4docacloud_name_prefix*
+                IdentityFile target/$msgsv4docacloud_name_prefix/ssh_key
+                StrictHostKeyChecking accept-new
+                UserKnownHostsFile target/$msgsv4docacloud_name_prefix/known_hosts
+                User centos
+            Host $msgsv4docacloud_name_prefix-bastion-vm
+                HostName $msgsv4docacloud_bastion_vm_ip
+            Host $msgsv4docacloud_name_prefix-rejeu-vm
+                HostName $msgsv4docacloud_rejeu_vm_ip
+                ProxyJump $msgsv4docacloud_name_prefix-bastion-vm
+            Host $msgsv4docacloud_name_prefix-service-vm
+                HostName $msgsv4docacloud_service_vm_ip
+                ProxyJump $msgsv4docacloud_name_prefix-bastion-vm
+        params:
+            $msgsv4docacloud_bastion_vm_ip: { get_attr: [msgsv4docacloud_bastion_floating_ip, floating_ip_address] }
+            $msgsv4docacloud_rejeu_vm_ip: { get_attr: [msgsv4docacloud_rejeu_vm, server-ip] }
+            $msgsv4docacloud_service_vm_ip: { get_attr: [ msgsv4docacloud_service_vm, networks, { get_attr: [msgsv4docacloud_network, name] }, 0] }
+            $msgsv4docacloud_name_prefix: { get_param: msgsv4docacloud_name_prefix }
+  
+  ips_cassandra:
+    description: Liste des IPs des VMs Cassandra
+    value:  {get_attr: [msgsv4docacloud_cassandra_group, server-ip]}
+  
+  ips_elasticsearch:
+    description: Liste des IPs des VMs Elastic
+    value:  {get_attr: [msgsv4docacloud_elasticsearch_group, server-ip]}
+
+  ips_james:
+    description: Liste des IPs des VMs James
+    value:  {get_attr: [msgsv4docacloud_james_group, server-ip]}
+  ips_injecteur:
+    description: Liste des IPs des VMs Injecteur
+    value:  {get_attr: [msgsv4docacloud_injecteur_group, server-ip]}

@@ -1,0 +1,10 @@
+- name: Install spring boot
+  hosts: all
+  remote_user: ubuntu
+  become: yes
+  vars_files:
+    - vars.yaml
+  roles:
+    - deploy_applications/install_outils
+  tags: [ 'outils', 'all']
+

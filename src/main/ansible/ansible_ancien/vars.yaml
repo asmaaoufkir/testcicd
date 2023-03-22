@@ -1,0 +1,4 @@
+---
+OS_PREFIX: "{{ lookup('env', 'OS_PREFIX')|default('msgsvtaiste', True) }}"
+
+# Database variables

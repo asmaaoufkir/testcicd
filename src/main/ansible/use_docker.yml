@@ -1,0 +1,12 @@
+- name: Mettre en place Docker
+  hosts: all
+  remote_user: ubuntu
+  become: true
+  vars:
+    container_count: 4
+    default_container_name: docker
+    default_container_image: ubuntu
+    default_container_command: sleep 1d
+  roles:
+    - deploy_applications/install_docker
+  tags: ['docker','all']

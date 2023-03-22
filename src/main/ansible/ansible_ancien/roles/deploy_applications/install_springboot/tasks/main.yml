@@ -1,0 +1,14 @@
+---
+# tasks file for install_logstash
+- name: ensure required pip-packages are installed
+  pip:
+    name: 
+      - docker>=2.4.0
+      - PyYAML>=5.4.1
+      - docker-compose>=1.28.6
+
+- name: Pull an image
+  docker_image:
+    name: alpine
+    tag: latest
+    source: pull

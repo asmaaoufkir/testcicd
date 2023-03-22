@@ -1,0 +1,8 @@
+---
+OS_PREFIX: "{{ lookup('env', 'OS_PREFIX')|default('msgsvtaiste', True) }}"
+# vars file for install_springboot
+dockerImagePrefix: "asmaaoufkir"
+projectVersion: "1.0.0-SNAPSHOT"
+projectArtifactId: "spring-boot-ansible"
+
+# Database variables

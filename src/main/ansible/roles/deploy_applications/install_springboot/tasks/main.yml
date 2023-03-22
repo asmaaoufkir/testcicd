@@ -1,0 +1,53 @@
+- debug:
+    var: ansible_pkg_mgr
+- name: install python3-pip
+  apt:
+    name: python3-pip
+    state: latest
+#- name: Upgrade pip
+#  pip: name=pip state=latest
+#  tags:
+#    - packages
+
+- name: Ensure botocore and boto3 modules are installed
+  pip:
+    name: [ "boto3", "botocore"]
+    extra_args: "--user"
+    executable: pip3
+
+#- name: Install docker-py
+#  pip:
+#    name: 'docker-py'
+#    state: present
+- name: install certain python modules for docker
+  become: yes 
+  become_user: ubuntu
+  pip:
+    name: "{{ item.name }}"
+    version: "{{ item.version }}"
+    state: present
+    executable: pip3
+  with_items:
+    # - { name: docker, version: 5.0.2 }
+   - { name: docker-py, version: 1.10.6 }
+
+- docker_login:
+    registry_url: https://registry.hub.docker.com 
+    username: asmaaoufkir
+    password: dckr_pat_KB3pDRfzY_F4HgrTlB9cXw-T5EQ      
+    reauthorize: yes
+  register: login_results
+- debug: 
+    var: login_results
+
+- name: Start Docker Container
+  docker_container:
+    name: spring-boot-ansible
+    image: "{{ dockerImagePrefix }}/{{ projectArtifactId }}:{{ projectVersion }}"
+    pull: yes
+    state: started
+    ports:
+      - "8080:8080"
+    exposed_ports:
+      - 8080
+

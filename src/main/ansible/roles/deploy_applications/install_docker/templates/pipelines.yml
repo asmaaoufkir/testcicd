@@ -1,0 +1,128 @@
+# distributor pattern, see
+# https://www.elastic.co/guide/en/logstash/current/pipeline-to-pipeline.html#distributor-pattern
+--- 
+-
+  config.string: |
+      input {
+         http_poller {
+            urls => {
+              stats => {
+                method => get
+                url => "http://integration-messagerie-james-0-vm.localdomain:40800/stats"
+                headers => {
+                    Accept => "application/json"
+                }
+              }
+            }
+            request_timeout => 60
+            socket_timeout => 60
+            # Supports "cron", "every", "at" and "in" schedules by rufus scheduler
+            schedule => { cron => "*/5 * * * * UTC"}
+            codec => "json"
+         }
+      }
+      output {
+         elasticsearch {
+           hosts => ["https://service.localdomain:9200"]
+           user => "admin"
+           password => "ChangezMoi"
+           ssl_certificate_verification => false
+           index => "msgsv-stats-%{+YYYY.MM.dd}"
+         }
+      }
+  pipeline.id: http-poller
+- 
+  config.string: |
+      input { beats { port => 5044 } }
+      output {
+          if [fields][type] == "postfix" {
+            pipeline { send_to => postfix }
+          } else if [fields][type] == "mailet" {
+            pipeline { send_to => mailet }
+            pipeline { send_to => mailet_headers }
+          } else if [fields][type] == "traces" {
+            pipeline { send_to => traces }
+            pipeline { send_to => traces_update }
+          } else if [fields][type] == "traces_alertes" {
+            pipeline { send_to => traces_alertes }
+          } else if [fields][type] == "traces_arp" {
+            pipeline { send_to => traces_arp }
+          } else if [fields][type] == "traces_orders" {
+            pipeline { send_to => traces_orders }
+          } else if [fields][type] == "traces_connexion" {
+            pipeline { send_to => traces_connexion }
+          } else if [fields][type] == "traces_dsn" {
+            pipeline { send_to => traces_dsn }
+          } else if [fields][type] == "postfix_stats" {
+            pipeline { send_to => postfix_stats }
+          } else if [fields][type] == "traces_action" {
+            pipeline { send_to => traces_action }
+          } else if [fields][type] == "mailet_control" {
+            pipeline { send_to => mailet_control }
+          } else if [fields][type] == "traces_purge" {
+            pipeline { send_to => traces_purge }
+          } else if [fields][type] == "traces_virus" {
+            pipeline { send_to => traces_virus }
+          } else {
+            pipeline { send_to => fallback }
+          }
+      }
+  pipeline.id: beats-server
+- 
+  path.config: "/opt/logstash/config/{01_postfix}.cfg"
+  pipeline.id: postfix-processing
+- 
+  path.config: "/opt/logstash/config/{01_postfix_stats}.cfg"
+  pipeline.id: postfix-stats-processing
+- 
+  path.config: "/opt/logstash/config/{01_mailet}.cfg"
+  pipeline.id: mailet-processing
+- 
+  path.config: "/opt/logstash/config/{01_mailet_headers}.cfg"
+  pipeline.id: mailet-headers-processing
+- 
+  path.config: "/opt/logstash/config/{01_traces}.cfg"
+  pipeline.id: traces-processing
+- 
+  path.config: "/opt/logstash/config/{01_traces_update}.cfg"
+  pipeline.id: traces-update-processing
+- 
+  path.config: "/opt/logstash/config/{01_traces_alertes}.cfg"
+  pipeline.id: traces_alertes
+- 
+  path.config: "/opt/logstash/config/{01_traces_arp}.cfg"
+  pipeline.id: traces_arp
+- 
+  path.config: "/opt/logstash/config/{01_traces_orders}.cfg"
+  pipeline.id: traces_orders
+- 
+  path.config: "/opt/logstash/config/{01_traces_connexion}.cfg"
+  pipeline.id: traces_connexion
+- 
+  path.config: "/opt/logstash/config/{01_traces_dsn}.cfg"
+  pipeline.id: traces_dsn
+- 
+  path.config: "/opt/logstash/config/{01_traces_action}.cfg"
+  pipeline.id: traces_action
+- 
+  path.config: "/opt/logstash/config/{01_mailet_control}.cfg"
+  pipeline.id: mailet_control_processing
+- 
+  path.config: "/opt/logstash/config/{01_traces_batch_purge}.cfg"
+  pipeline.id: traces_purge
+- 
+  path.config: "/opt/logstash/config/{01_traces_virus}.cfg"
+  pipeline.id: traces_virus
+- 
+
+  config.string: |
+      input { pipeline { address => fallback } }
+      output {
+         elasticsearch {
+           hosts => ["https://service.localdomain:9200"]
+           user => "admin"
+           password => "ChangezMoi"
+           ssl_certificate_verification => false
+         }
+      }
+  pipeline.id: fallback-processing

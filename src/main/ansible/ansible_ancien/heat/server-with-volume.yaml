@@ -1,0 +1,95 @@
+heat_template_version: 2018-08-31
+
+description: >
+  Deploy a server and attach a floating IP address
+parameters:
+  key_name:
+    type: string
+    description: Name of keypair to assign to servers
+  image:
+    type: string
+    description: Name of image to use for servers
+  name:
+    type: string
+    description: Name of the server
+  flavor:
+    type: string
+    description: Flavor to use for servers
+  network_id:
+    type: string
+    description: ID of private network
+  security_group:
+    type: string
+    description: ID of security group
+  data_volume_size:
+    default: 1
+    type: number
+    description: size of extra volume mounted in /data
+resources:
+  volume_boot:
+    type: OS::Cinder::Volume
+    properties:
+      image: CentOS-7-msgsv
+      size: 20
+  server:
+    type: OS::Nova::Server
+    properties:
+      name: { get_param: name }
+      image: { get_param: image }
+      flavor: { get_param: flavor }
+      key_name: { get_param: key_name }
+      networks:
+        - port: { get_resource: server_port }
+      block_device_mapping:
+        - device_name: vda
+          volume_id: { get_resource: volume_boot }
+          delete_on_termination: true
+      user_data_format: SOFTWARE_CONFIG
+      user_data: { get_resource: server_init }
+
+  server_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_param: network_id }
+      security_groups: [{ get_param: security_group}]
+
+  server_init:
+    type: OS::Heat::MultipartMime
+    properties:
+      parts:
+       - config: { get_resource: data_volume_config }
+
+  data_volume:
+    type: OS::Cinder::Volume
+    properties:
+      name:
+        str_replace:
+          template: $name-data-volume
+          params:
+            $name : { get_param: name }
+      size: { get_param: data_volume_size }
+
+  data_volume_attachment:
+    type: OS::Cinder::VolumeAttachment
+    properties:
+      volume_id: { get_resource: data_volume }
+      instance_uuid: { get_resource: server }
+      mountpoint: /dev/vdb
+
+  data_volume_config:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        fs_setup:
+         - label: data
+           filesystem: 'ext4'
+           device: '/dev/vdb'
+           partition: auto
+         - cmd: mkdir /data
+        mounts:
+         - [/dev/vdb, /data, "ext4","defaults,nofail", "0", "0"]
+
+outputs:
+  server-ip:
+    value: { get_attr: [server, networks, { get_param: network_id }, 0] }
+    

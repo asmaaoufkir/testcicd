@@ -1,0 +1,10 @@
+- name: Install les packages de PIP
+  hosts: all
+  remote_user: ubuntu
+  become: yes
+  vars_files:
+    - vars.yaml
+  roles:
+    - deploy_applications/install_pip
+  tags: [ 'pip', 'all']
+

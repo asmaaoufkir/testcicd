@@ -1,0 +1,138 @@
+heat_template_version: 2018-08-31
+
+description: msgsvtools4docacloud docacloud stack
+
+parameters:
+
+  msgsvtools4docacloud_public_key:
+    type: string
+    description: clef SSH publique
+
+# Reseau externe
+  docacloud_public_network:
+    type: string
+    description: Nom du reseau public
+    default: ext-net
+
+resources:
+
+# Groupes de securite
+# Autorise les acces entrant depuis Internet sur les ports http et depuis le VPN sur le port SSH
+  msgsvtools4docacloud_server_security_group:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      description: Groupe de securite pour le projet msgsvtools4docacloud
+      name: msgsvtools4docacloud-security-group
+      rules:
+        # connexion SSH depuis l'exterieur
+        - remote_ip_prefix: "0.0.0.0/0"
+          protocol: tcp
+          direction: ingress
+          port_range_min: 22
+          port_range_max: 22
+          
+# Reseau
+  msgsvtools4docacloud_network:
+    type: OS::Neutron::Net
+    properties:
+      name: msgsvtools4docacloud-network
+  msgsvtools4docacloud_subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      name: msgsvtools4docacloud-subnet
+      network_id: { get_resource: msgsvtools4docacloud_network }
+      cidr: "192.168.1.0/24"
+      allocation_pools: [{"start": "192.168.1.33", "end": "192.168.1.250"}]
+
+  msgsvtools4docacloud_router:
+    depends_on: msgsvtools4docacloud_subnet
+    type: OS::Neutron::Router
+    properties:
+      name: msgsvtools4docacloud-router
+      external_gateway_info:
+        network: { get_param: docacloud_public_network }
+
+  msgsvtools4docacloud_router_interface1:
+    depends_on: msgsvtools4docacloud_router
+    type: OS::Neutron::RouterInterface
+    properties:
+      router: { get_resource: msgsvtools4docacloud_router }
+      subnet: { get_resource: msgsvtools4docacloud_subnet }
+
+# Clef SSH maitresse
+
+  msgsvtools4docacloud-ssh-key:
+    type: OS::Nova::KeyPair
+    properties:
+      name: msgsvtools4docacloud-ssh-key
+      public_key: { get_param: msgsvtools4docacloud_public_key }
+
+  ############## start virtual machines #####################
+  
+  # --- runner
+  msgsvtools4docacloud_runner_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_resource: msgsvtools4docacloud_network }
+      security_groups: [ { get_resource: msgsvtools4docacloud_server_security_group} ]
+
+  msgsvtools4docacloud_runner_volume_boot:
+    type: OS::Cinder::Volume
+    properties:
+      image: Canonical_Ubuntu_20.04_LTS
+      size: 50
+
+  msgsvtools4docacloud_runner_vm:
+    depends_on: ["msgsvtools4docacloud-ssh-key", "msgsvtools4docacloud_server_security_group", "msgsvtools4docacloud_network", "msgsvtools4docacloud_runner_port"]
+    type: OS::Nova::Server
+    properties:
+      name: msgsvtools4docacloud-runner-vm
+      key_name: { get_resource: msgsvtools4docacloud-ssh-key }
+      image: Canonical_Ubuntu_20.04_LTS
+      flavor: doca.C1_R1_D20
+      networks:
+        - port: { get_resource: msgsvtools4docacloud_runner_port }
+      block_device_mapping:
+        - device_name: vda
+          volume_id: { get_resource: msgsvtools4docacloud_runner_volume_boot }
+          delete_on_termination: true
+
+  msgsvtools4docacloud_runner_floating_ip:
+    depends_on: msgsvtools4docacloud_runner_vm
+    type: OS::Neutron::FloatingIP
+    properties:
+      floating_network_id: { get_param: docacloud_public_network }
+      port_id: { get_resource: msgsvtools4docacloud_runner_port }
+
+  ############## end virtual machines #####################
+
+outputs:
+  inventory:
+    description: Ansible inventory
+    value:
+      str_replace:
+        template: |
+          [all_servers:vars]
+          ansible_ssh_private_key_file = {{inventory_dir}}/ssh_key
+          # ne pas enlever {{inventory_dir}}/known_hosts il est utilisé par deploy_applications
+          ansible_ssh_common_args = -F {{inventory_dir}}/ssh_config -o UserKnownHostsFile={{inventory_dir}}/known_hosts
+
+          [all_servers]
+          msgsvtools4docacloud-runner-vm floating_ip=$msgsvtools4docacloud_runner_ip
+        params:
+            $msgsvtools4docacloud_runner_ip: { get_attr: [msgsvtools4docacloud_runner_floating_ip, floating_ip_address] }
+
+  ssh_config:
+    description: SSH configuration
+    value:
+      str_replace:
+        template: |
+            Host msgsvtools4docacloud*
+                IdentityFile target/msgsvtools4docacloud/ssh_key
+                StrictHostKeyChecking accept-new
+                UserKnownHostsFile target/msgsvtools4docacloud/known_hosts
+                User ubuntu
+            Host msgsvtools4docacloud-runner-vm
+                HostName $msgsvtools4docacloud_runner_vm_ip
+        params:
+            $msgsvtools4docacloud_runner_vm_ip: { get_attr: [msgsvtools4docacloud_runner_floating_ip, floating_ip_address] }

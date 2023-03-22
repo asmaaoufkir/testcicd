@@ -1,0 +1,14 @@
+---
+- hosts: all 
+  remote_user: ubuntu
+  tasks:
+  - name: Start Docker Container
+    docker_container:
+      name: spring-boot-ansible
+      image: "asmaaoufkir/spring-boot-ansible:1.0.0-SNAPSHOT"
+      pull: yes
+      state: started
+      ports:
+        - "8080:8080"
+      exposed_ports:
+        - 8080

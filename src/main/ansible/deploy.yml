@@ -1,0 +1,16 @@
+- name: Install spring boot
+  hosts: all
+  #vars:
+  #ansible_python_interpreter: /usr/bin/python3
+  remote_user: ubuntu
+  become: yes
+  #pre_tasks:
+  #- name: install python
+  #raw: 'cat < /home/ubuntu/testcicd/src/main/ansible/scripts/script.sh'
+    #args:
+    #executable: /bin/bash
+  vars_files:
+    - vars.yaml
+  roles:
+    - deploy_applications/install_springboot
+  tags: [ 'springboot', 'all']
